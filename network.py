@@ -244,8 +244,7 @@ class Network:
         self.pointpatterns[name] = PointPattern(shapefile, idvariable=idvariable, attribute=attribute)
         self.snap_to_edge(self.pointpatterns[name])
 
-    @staticmethod
-    def compute_distance_to_nodes(ntw, x, y, edge):
+    def compute_distance_to_nodes(self, x, y, edge):
         """
         Given an observation on a network edge, return the distance to the two
         nodes that bound that end.
@@ -263,8 +262,8 @@ class Network:
         d2          float  the distance to node1, always the node with the greater id
         """
 
-        d1 = util.compute_length((x,y), ntw.node_coords[edge[0]])
-        d2 = util.compute_length((x,y), ntw.node_coords[edge[1]])
+        d1 = util.compute_length((x,y), self.node_coords[edge[0]])
+        d2 = util.compute_length((x,y), self.node_coords[edge[1]])
         return d1, d2
 
     def snap_to_edge(self, pointpattern):
