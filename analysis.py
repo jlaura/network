@@ -27,6 +27,8 @@ def networkg(ntw, pointpattern, nsteps=10, permutations=99, threshold=5, envelop
                 c += 1
 
         #2 column matrix, c0 is the nn id and c1 is the distance
+
+        #Move to util.py
         nearest = np.zeros((len(pt_indices), 2), dtype=np.float32)
 
         for i, p1 in enumerate(pt_indices):

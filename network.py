@@ -262,8 +262,8 @@ class Network:
         d2          float  the distance to node1, always the node with the greater id
         """
 
-        d1 = util.compute_length((x,y), self.node_coords[edge[0]])
-        d2 = util.compute_length((x,y), self.node_coords[edge[1]])
+        d1 = util.compute_length((x,y), ntw.node_coords[edge[0]])
+        d2 = util.compute_length((x,y), ntw.node_coords[edge[1]])
         return d1, d2
 
     def snap_to_edge(self, pointpattern):
