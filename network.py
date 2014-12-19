@@ -262,8 +262,8 @@ class Network:
         d2          float  the distance to node1, always the node with the greater id
         """
 
-        d1 = util.compute_length((x,y), ntw.node_coords[edge[0]])
-        d2 = util.compute_length((x,y), ntw.node_coords[edge[1]])
+        d1 = util.compute_length((x,y), self.node_coords[edge[0]])
+        d2 = util.compute_length((x,y), self.node_coords[edge[1]])
         return d1, d2
 
     def snap_to_edge(self, pointpattern):
@@ -472,7 +472,7 @@ class Network:
             pred = np.array(pred)
             tree = util.generatetree(pred)
             cumdist = util.cumulativedistances(np.array(distance), tree)
-            self.alldistances[node] = (cumdist, tree)
+            self.alldistances[node] = (distance, tree)
 
     def nearestneighbordistances(self, sourcepattern, destpattern=None):
         """
@@ -502,25 +502,153 @@ class Network:
         pt_indices = self.pointpatterns[sourcepattern].points.keys()
         dist_to_node = self.pointpatterns[sourcepattern].dist_to_node
         nearest = np.zeros((len(pt_indices), 2), dtype=np.float32)
+        nearest[:,1] = np.inf
 
         if destpattern == None:
             destpattern = sourcepattern
         obs_to_node = self.pointpatterns[destpattern].obs_to_node
 
-        for i, p1 in enumerate(pt_indices):
-            dist1, dist2 = dist_to_node[p1].values()
-            endnode1, endnode2 = dist_to_node[p1].keys()
+        searchpts = copy.deepcopy(pt_indices)
 
-            #snapped_coords = pts.snapped_coordinates[p1]
-            nearest_obs1, nearest_node1, nearest_node_distance1 = util.nearestneighborsearch(obs_to_node, self.alldistances, endnode1, dist1)
-            nearest_obs2, nearest_node2, nearest_node_distance2 = util.nearestneighborsearch(obs_to_node, self.alldistances, endnode2, dist2)
 
-            if nearest_node_distance2 <= nearest_node_distance1:
-                nearest[i,0] = nearest_obs2
-                nearest[i,1] = nearest_node_distance2
-            else:
-                nearest[i,0] = nearest_obs1
-                nearest[i,1] = nearest_node_distance1
+        searchnodes = {}
+        for s in searchpts:
+            e1, e2 = dist_to_node[s].keys()
+            searchnodes[s] = (e1, e2)
+
+        for p1 in pt_indices:
+            #Get the source nodes and dist to source nodes
+            source1, source2 = searchnodes[p1]
+            sdist1, sdist2 = dist_to_node[p1].values()
+
+            searchpts.remove(p1)
+            for p2 in searchpts:
+                dest1, dest2 = searchnodes[p2]
+                ddist1, ddist2 = dist_to_node[p2].values()
+                source1_to_dest1 = sdist1 + self.alldistances[source1][0][dest1] + ddist1
+                source1_to_dest2 = sdist1 + self.alldistances[source1][0][dest2] + ddist2
+                source2_to_dest1 = sdist2 + self.alldistances[source2][0][dest1] + ddist1
+                source2_to_dest2 = sdist2 + self.alldistances[source2][0][dest2] + ddist2
+
+
+                if source1_to_dest1 < nearest[p1, 1]:
+                    nearest[p1, 0] = p2
+                    nearest[p1, 1] = source1_to_dest1
+                if source1_to_dest1 < nearest[p2, 1]:
+                    nearest[p2, 0] = p1
+                    nearest[p2, 1] = source1_to_dest1
+
+                if source1_to_dest2 < nearest[p1, 1]:
+                    nearest[p1, 0] = p2
+                    nearest[p1, 1] = source1_to_dest2
+                if source1_to_dest1 < nearest[p2, 1]:
+                    nearest[p2, 0] = p1
+                    nearest[p2, 1] = source1_to_dest2
+
+                if source2_to_dest1 < nearest[p1, 1]:
+                    nearest[p1, 0] = p2
+                    nearest[p1, 1] = source2_to_dest1
+                if source2_to_dest1 < nearest[p2, 1]:
+                    nearest[p2, 0] = p1
+                    nearest[p2, 1] = source2_to_dest1
+
+                if source2_to_dest2 < nearest[p1, 1]:
+                    nearest[p1, 0] = p2
+                    nearest[p1, 1] = source2_to_dest2
+                if source2_to_dest2 < nearest[p2, 1]:
+                    nearest[p2, 0] = p1
+                    nearest[p2, 1] = source2_to_dest2
+
+        print nearest
+
+
+    def allneighbordistances(self, sourcepattern, destpattern=None):
+        """
+        Compute the distance between all observations points and either
+         (a) all other observation points within the same set or
+         (b) all other observation points from another set
+
+        Parameters
+        ----------
+        sourcepattern   str The key of a point pattern snapped to the network.
+        destpatter      str (Optional) The key of a point pattern snapped to the network.
+
+        Returns
+        -------
+        nearest         ndarray (n,2) With column[:,0] containing the id of the nearest
+                        neighbor and column [:,1] containing the distance.
+        """
+
+        if not sourcepattern in self.pointpatterns.keys():
+            print "Key Error: Available point patterns are {}".format(self.pointpatterns.key())
+            return
+
+        try:
+            hasattr(self.alldistances)
+        except:
+            self.node_distance_matrix()
+
+        src_indices = self.pointpatterns[sourcepattern].points.keys()
+        nsource_pts = len(src_indices)
+        dist_to_node = self.pointpatterns[sourcepattern].dist_to_node
+        if destpattern == None:
+            destpattern = sourcepattern
+        dest_indices = self.pointpatterns[destpattern].points.keys()
+        ndest_pts = len(dest_indices)
+
+        searchpts = copy.deepcopy(dest_indices)
+        nearest  = np.empty((nsource_pts, ndest_pts))
+        nearest[:] = np.inf
+
+        searchnodes = {}
+        for s in searchpts:
+            e1, e2 = dist_to_node[s].keys()
+            searchnodes[s] = (e1, e2)
+
+        searchnodes = {}
+        for s in searchpts:
+            e1, e2 = dist_to_node[s].keys()
+            searchnodes[s] = (e1, e2)
+
+        for p1 in src_indices:
+            #Get the source nodes and dist to source nodes
+            source1, source2 = searchnodes[p1]
+            sdist1, sdist2 = dist_to_node[p1].values()
+
+            searchpts.remove(p1)
+            for p2 in searchpts:
+                dest1, dest2 = searchnodes[p2]
+                ddist1, ddist2 = dist_to_node[p2].values()
+                source1_to_dest1 = sdist1 + self.alldistances[source1][0][dest1] + ddist1
+                source1_to_dest2 = sdist1 + self.alldistances[source1][0][dest2] + ddist2
+                source2_to_dest1 = sdist2 + self.alldistances[source2][0][dest1] + ddist1
+                source2_to_dest2 = sdist2 + self.alldistances[source2][0][dest2] + ddist2
+
+                p1row = nearest[p1]
+                p1col = nearest[:,p1]
+                p2row = nearest[p2]
+                p2col = nearest[:,p2]
+
+                if source1_to_dest1 < nearest[p1, p2]:
+                    nearest[p1, p2] = source1_to_dest1
+                if source1_to_dest1 < nearest[p2, p1]:
+                    nearest[p2, p1] = source1_to_dest1
+
+                if source1_to_dest2 < nearest[p1, p2]:
+                    nearest[p1, p2] = source1_to_dest2
+                if source1_to_dest1 < nearest[p2, p1]:
+                    nearest[p2, p1] = source1_to_dest2
+
+                if source2_to_dest1 < nearest[p1, p2]:
+                    nearest[p1, p2] = source2_to_dest1
+                if source2_to_dest1 < nearest[p2, p1]:
+                    nearest[p2, p2] = source2_to_dest1
+
+                if source2_to_dest2 < nearest[p1, p2]:
+                    nearest[p1, p2] = source2_to_dest2
+                if source2_to_dest2 < nearest[p2, p1]:
+                    nearest[p2, p1] = source2_to_dest2
+        np.fill_diagonal(nearest, 0)
         return nearest
 
 class PointPattern():
