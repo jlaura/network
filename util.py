@@ -133,3 +133,23 @@ def shortest_path(ntw, cost, start, end):
         previous = pred[end]
     path.append(start)
     return tuple(path)
+
+def nearest_neighbor_search(pt_indices, dist_to_node, obs_to_node, alldistances, snappedcoords):
+    nearest = np.empty((2,len(pt_indices)))
+
+    for i, p1 in enumerate(pt_indices):
+        dist1, dist2 = dist_to_node[p1].values()
+        endnode1, endnode2 = dist_to_node[p1].keys()
+
+        snapped_coords = snappedcoords[p1]
+        nearest_obs1, nearest_node1, nearest_node_distance1 = nearestneighborsearch(obs_to_node, alldistances, endnode1, dist1)
+        nearest_obs2, nearest_node2, nearest_node_distance2 = nearestneighborsearch(obs_to_node, alldistances, endnode2, dist2)
+
+        if nearest_node_distance2 <= nearest_node_distance1:
+            nearest[i,0] = nearest_obs2
+            nearest[i,1] = nearest_node_distance2
+        else:
+            nearest[i,0] = nearest_obs1
+            nearest[i,1] = nearest_node_distance1
+
+    return nearest

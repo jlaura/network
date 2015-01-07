@@ -218,14 +218,24 @@ class Network:
 
         self.w = ps.weights.W(neighbors, weights=weights)
 
-    def distanceweights(self, threshold):
+    def distancebandweights(self, threshold):
         """
         Create distance based weights
         """
         self.wtype='Distance: {}'.format(threshold)
-        print self.edge_lengths
+        try:
+            hasattr(self.alldistances)
+        except:
+            self.node_distance_matrix()
 
-        self.w = ps.weights.W()
+        neighbor_query = np.where(self.distancematrix < threshold)
+        neighbors = defaultdict(list)
+        for i, n in enumerate(neighbor_query[0]):
+            neigh = neighbor_query[1][i]
+            if n != neigh:
+                neighbors[n].append(neighbor_query[1][i])
+
+        self.w = ps.weights.W(neighbors)
 
     def snapobservations(self, shapefile, name, idvariable=None, attribute=None):
         #Explicitly defined kwargs, if it cleaner to just take **kwargs and
@@ -434,8 +444,9 @@ class Network:
         -------
         random_pts: dict with {(edge):[(x,y), (x1, y1), ... , (xn,yn)]}
         """
-        random_pts = defaultdict(list)
+        simpts = SimulatedPointPattern()
 
+        #Cumulative Network Length
         edges = []
         lengths = np.zeros(len(self.edge_lengths))
         for i, key in enumerate(self.edge_lengths.iterkeys()):
@@ -445,18 +456,27 @@ class Network:
         totallength = stops[-1]
 
         if distribution is 'uniform':
-            randompoints = np.random.uniform(0, totallength, size=(count,))
+            nrandompts = np.random.uniform(0, totallength, size=(count,))
         elif distribution is 'poisson':
-            randompoints = np.random.uniform(0, totallength, size=(np.random.poisson(count),))
+            nrandompts = np.random.uniform(0, totallength, size=(np.random.poisson(count),))
 
-        for r in randompoints:
+        for i, r in enumerate(nrandompts):
             idx = np.where(r < stops)[0][0]
             assignment_edge = edges[idx]
             distance_from_start = stops[idx] - r
+            #Populate the coordinates dict
             x0, y0 = self._newpoint_coords(assignment_edge, distance_from_start)
-            random_pts[assignment_edge].append((x0,y0))
-        return random_pts
+            simpts.snapped_coordinates[i] = (x0, y0)
+            simpts.obs_to_node[assignment_edge[0]].append(i)
+            simpts.obs_to_node[assignment_edge[1]].append(i)
 
+            #Populate the distance to node
+            simpts.dist_to_node[i] = {assignment_edge[0] : distance_from_start,
+                    assignment_edge[1] : self.edge_lengths[edges[idx]] - distance_from_start}
+
+            simpts.points = simpts.snapped_coordinates
+
+        return simpts
 
     def enum_links_node(self, v0):
         links = []
@@ -467,12 +487,15 @@ class Network:
 
     def node_distance_matrix(self):
         self.alldistances = {}
+        nnodes = len(self.node_list)
+        self.distancematrix = np.empty((nnodes, nnodes))
         for node in self.node_list:
             distance, pred = util.dijkstra(self, self.edge_lengths, node, n=float('inf'))
             pred = np.array(pred)
             tree = util.generatetree(pred)
             cumdist = util.cumulativedistances(np.array(distance), tree)
             self.alldistances[node] = (distance, tree)
+            self.distancematrix[node] = distance
 
     def nearestneighbordistances(self, sourcepattern, destpattern=None):
         """
@@ -498,7 +521,7 @@ class Network:
             hasattr(self.alldistances)
         except:
             self.node_distance_matrix()
-
+        print sourcepattern
         pt_indices = self.pointpatterns[sourcepattern].points.keys()
         dist_to_node = self.pointpatterns[sourcepattern].dist_to_node
         nearest = np.zeros((len(pt_indices), 2), dtype=np.float32)
@@ -559,7 +582,7 @@ class Network:
                     nearest[p2, 0] = p1
                     nearest[p2, 1] = source2_to_dest2
 
-        print nearest
+        return nearest
 
 
     def allneighbordistances(self, sourcepattern, destpattern=None):
@@ -579,31 +602,22 @@ class Network:
                         neighbor and column [:,1] containing the distance.
         """
 
-        if not sourcepattern in self.pointpatterns.keys():
-            print "Key Error: Available point patterns are {}".format(self.pointpatterns.key())
-            return
-
         try:
             hasattr(self.alldistances)
         except:
             self.node_distance_matrix()
 
-        src_indices = self.pointpatterns[sourcepattern].points.keys()
+        src_indices = sourcepattern.points.keys()
         nsource_pts = len(src_indices)
-        dist_to_node = self.pointpatterns[sourcepattern].dist_to_node
+        dist_to_node = sourcepattern.dist_to_node
         if destpattern == None:
             destpattern = sourcepattern
-        dest_indices = self.pointpatterns[destpattern].points.keys()
+        dest_indices = destpattern.points.keys()
         ndest_pts = len(dest_indices)
 
         searchpts = copy.deepcopy(dest_indices)
         nearest  = np.empty((nsource_pts, ndest_pts))
         nearest[:] = np.inf
-
-        searchnodes = {}
-        for s in searchpts:
-            e1, e2 = dist_to_node[s].keys()
-            searchnodes[s] = (e1, e2)
 
         searchnodes = {}
         for s in searchpts:
@@ -648,14 +662,14 @@ class Network:
                     nearest[p1, p2] = source2_to_dest2
                 if source2_to_dest2 < nearest[p2, p1]:
                     nearest[p2, p1] = source2_to_dest2
-        np.fill_diagonal(nearest, 0)
+        np.fill_diagonal(nearest, np.nan)
         return nearest
 
 class PointPattern():
     def __init__(self, shapefile, idvariable=None, attribute=False):
         self.points = {}
         self.npoints = 0
-        #Get id variables if requested
+
         if idvariable:
             ids = get_ids(shapefile, idvariable)
         else:
@@ -684,6 +698,22 @@ class PointPattern():
         if db:
             db.close()
         self.npoints = len(self.points.keys())
+
+
+class SimulatedPointPattern():
+    """
+    Struct style class to mirror the Point Pattern Class.
+
+    If the PointPattern class has methods, it might make sense to
+    make this a child of that class.
+    """
+    def __init__(self):
+        self.npoints = 0
+        self.obs_to_edge = {}
+        self.obs_to_node = defaultdict(list)
+        self.dist_to_node = {}
+        self.snapped_coordinates = {}
+
 
 class SortedEdges(OrderedDict):
     def next_key(self, key):
